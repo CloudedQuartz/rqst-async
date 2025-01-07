@@ -1,5 +1,7 @@
+use chatbot::{gen_random_number, query_chat};
 use miniserve::{http::StatusCode, Content, Request, Response};
 use serde::{Deserialize, Serialize};
+use tokio::join;
 
 async fn index(_req: Request) -> Response {
     let content = include_str!("../index.html").to_string();
@@ -18,9 +20,15 @@ async fn chat(req: Request) -> Response {
     let Ok(mut messages) = serde_json::from_str::<Messages>(&body) else {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
-    messages
-        .messages
-        .push("And how does that make you feel?".into());
+
+    let (responses, chosen_response) = join!(query_chat(&messages.messages), gen_random_number());
+    messages.messages.push(
+        responses
+            .get(chosen_response % responses.len())
+            .map(|s| s.as_str())
+            .unwrap_or_default()
+            .into(),
+    );
     Ok(Content::Json(serde_json::to_string(&messages).unwrap()))
 }
 
