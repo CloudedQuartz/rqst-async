@@ -1,7 +1,6 @@
 use chatbot::{gen_random_number, query_chat};
 use miniserve::{http::StatusCode, Content, Request, Response};
 use serde::{Deserialize, Serialize};
-use tokio::join;
 
 async fn index(_req: Request) -> Response {
     let content = include_str!("../index.html").to_string();
@@ -21,7 +20,14 @@ async fn chat(req: Request) -> Response {
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     };
 
-    let (responses, chosen_response) = join!(query_chat(&messages.messages), gen_random_number());
+    let messages_clone = messages.messages.clone();
+    let responses_handle = tokio::spawn(async move { query_chat(&messages_clone).await });
+    let chosen_response_handle = tokio::spawn(gen_random_number());
+
+    let (responses, chosen_response) = tokio::try_join!(responses_handle, chosen_response_handle)
+        .map_err(|_e| {})
+        .unwrap();
+
     messages.messages.push(
         responses
             .get(chosen_response % responses.len())
@@ -29,6 +35,7 @@ async fn chat(req: Request) -> Response {
             .unwrap_or_default()
             .into(),
     );
+
     Ok(Content::Json(serde_json::to_string(&messages).unwrap()))
 }
 
